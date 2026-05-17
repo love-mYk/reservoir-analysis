@@ -1,36 +1,53 @@
-"""
-launcher.py — PyInstaller 打包入口
-打包后双击 EXE 自动启动浏览器，运行 Streamlit 应用
-"""
 import sys
 import os
-import threading
+import socket
 import webbrowser
-import time
+import threading
 
 
-def resource_path(rel):
-    """兼容 PyInstaller _MEIPASS 路径"""
-    base = getattr(sys, "_MEIPASS", os.path.abspath("."))
-    return os.path.join(base, rel)
+def find_free_port(default=8501):
+    """尝试使用默认端口，被占用则自动找空闲端口"""
+    for port in range(default, default + 20):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                return port
+    # fallback: OS 分配
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
-def open_browser():
-    time.sleep(3)
-    webbrowser.open("http://localhost:8501")
+def open_browser(port):
+    webbrowser.open(f"http://localhost:{port}")
+
+
+def main():
+    # ✅ 关键：frozen EXE 里用 sys._MEIPASS 定位资源
+    if getattr(sys, "frozen", False):
+        bundle_dir = sys._MEIPASS
+    else:
+        bundle_dir = os.path.dirname(os.path.abspath(__file__))
+
+    app_path = os.path.join(bundle_dir, "app.py")
+    port = find_free_port(8501)
+
+    # 延迟 2 秒后自动打开浏览器
+    threading.Timer(2.0, open_browser, args=[port]).start()
+
+    from streamlit.web import cli as stcli
+
+    sys.argv = [
+        "streamlit",
+        "run",
+        app_path,
+        f"--server.port={port}",
+        "--server.headless=true",
+        "--global.developmentMode=false",
+        "--browser.gatherUsageStats=false",
+    ]
+    sys.exit(stcli.main())
 
 
 if __name__ == "__main__":
-    threading.Thread(target=open_browser, daemon=True).start()
-
-    # 启动 streamlit
-    from streamlit.web import cli as stcli
-    app_path = resource_path("app.py")
-    sys.argv = [
-        "streamlit", "run", app_path,
-        "--server.headless", "true",
-        "--server.port", "8501",
-        "--server.enableCORS", "false",
-        "--browser.gatherUsageStats", "false",
-    ]
-    sys.exit(stcli.main())
+    main()
