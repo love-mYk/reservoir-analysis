@@ -3,7 +3,7 @@
 物以类聚 · 成功被偏爱
 by MaYk
 """
-
+import matplotlib.backends.backend_svg
 import io, warnings
 import numpy as np
 import pandas as pd
