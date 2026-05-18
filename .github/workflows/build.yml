@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
     tags:     [ 'v*' ]
-  workflow_dispatch:          # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -15,12 +15,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. 配置 Python
+      # 2. 配置 Python（去掉 cache:pip，避免找不到 requirements.txt 报错）
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       # 3. 安装依赖
       - name: Install dependencies
@@ -28,39 +27,56 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. 找到 streamlit 包路径（用于 --add-data）
-      - name: Get streamlit path
-        id: stpath
+      # 4. 找到关键包路径
+      - name: Get package paths
+        id: pkgpath
         shell: pwsh
         run: |
-          $p = python -c "import streamlit; import os; print(os.path.dirname(streamlit.__file__))"
-          echo "ST_PATH=$p" >> $env:GITHUB_OUTPUT
+          $st = python -c "import streamlit, os; print(os.path.dirname(streamlit.__file__))"
+          $mpl = python -c "import matplotlib, os; print(os.path.dirname(matplotlib.__file__))"
+          echo "ST_PATH=$st"   >> $env:GITHUB_OUTPUT
+          echo "MPL_PATH=$mpl" >> $env:GITHUB_OUTPUT
 
       # 5. PyInstaller 打包
+      #    matplotlib 问题修复：
+      #      - --collect-all matplotlib        收集所有 matplotlib 资源（字体/样式表）
+      #      - backend_agg  Streamlit 默认后端
+      #      - backend_svg  SVG 导出
+      #      - backend_pdf  可选，保留
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: |
-          $st = "${{ steps.stpath.outputs.ST_PATH }}"
+          $st  = "${{ steps.pkgpath.outputs.ST_PATH }}"
+          $mpl = "${{ steps.pkgpath.outputs.MPL_PATH }}"
           pyinstaller launcher.py `
             --onefile `
             --noconsole `
             --name "储层主控因素分析系统" `
             --add-data "app.py;." `
             --add-data "${st};streamlit" `
+            --add-data "${mpl};matplotlib" `
             --hidden-import streamlit `
             --hidden-import streamlit.web.cli `
             --hidden-import streamlit.runtime `
+            --hidden-import streamlit.runtime.scriptrunner `
             --hidden-import sklearn.manifold `
             --hidden-import sklearn.preprocessing `
             --hidden-import scipy.spatial.distance `
             --hidden-import scipy.stats `
-
+            --hidden-import matplotlib `
+            --hidden-import matplotlib.pyplot `
+            --hidden-import matplotlib.backends.backend_agg `
+            --hidden-import matplotlib.backends.backend_svg `
+            --hidden-import matplotlib.backends.backend_pdf `
+            --hidden-import matplotlib.figure `
+            --hidden-import matplotlib.patches `
+            --hidden-import matplotlib.gridspec `
             --collect-all streamlit `
+            --collect-all matplotlib `
             --collect-all altair `
-            --collect-all 
-            pydeckpyinstaller -F app.py --hidden-import matplotlib.backends.backend_svg
-
-
+            --collect-all pydeck `
+            --collect-all sklearn `
+            --collect-all scipy
 
       # 6. 上传 EXE 为 Artifact
       - name: Upload EXE artifact
@@ -70,7 +86,7 @@ jobs:
           path: dist/储层主控因素分析系统.exe
           retention-days: 30
 
-      # 7. 如果是 tag push，自动创建 Release 并附上 EXE
+      # 7. tag push 时自动创建 Release
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
