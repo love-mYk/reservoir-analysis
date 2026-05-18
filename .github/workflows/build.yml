@@ -54,9 +54,13 @@ jobs:
             --hidden-import sklearn.preprocessing `
             --hidden-import scipy.spatial.distance `
             --hidden-import scipy.stats `
+
             --collect-all streamlit `
             --collect-all altair `
-            --collect-all pydeck
+            --collect-all 
+            pydeckpyinstaller -F app.py --hidden-import matplotlib.backends.backend_svg
+
+
 
       # 6. 上传 EXE 为 Artifact
       - name: Upload EXE artifact
