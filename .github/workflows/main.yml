@@ -1,0 +1,83 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+    tags:     [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install streamlit==1.35.0 numpy pandas scipy scikit-learn matplotlib openpyxl pyinstaller
+
+      - name: Get package paths
+        id: pkgpath
+        shell: pwsh
+        run: |
+          $st  = python -c "import streamlit, os; print(os.path.dirname(streamlit.__file__))"
+          $mpl = python -c "import matplotlib, os; print(os.path.dirname(matplotlib.__file__))"
+          echo "ST_PATH=$st"   >> $env:GITHUB_OUTPUT
+          echo "MPL_PATH=$mpl" >> $env:GITHUB_OUTPUT
+
+      - name: Build EXE with PyInstaller
+        shell: pwsh
+        run: |
+          $st  = "${{ steps.pkgpath.outputs.ST_PATH }}"
+          $mpl = "${{ steps.pkgpath.outputs.MPL_PATH }}"
+          pyinstaller launcher.py `
+            --onefile `
+            --noconsole `
+            --name "储层主控因素分析系统" `
+            --add-data "app.py;." `
+            --add-data "${st};streamlit" `
+            --add-data "${mpl};matplotlib" `
+            --hidden-import streamlit `
+            --hidden-import streamlit.web.cli `
+            --hidden-import streamlit.runtime `
+            --hidden-import streamlit.runtime.scriptrunner `
+            --hidden-import sklearn.manifold `
+            --hidden-import sklearn.preprocessing `
+            --hidden-import scipy.spatial.distance `
+            --hidden-import scipy.stats `
+            --hidden-import matplotlib `
+            --hidden-import matplotlib.pyplot `
+            --hidden-import matplotlib.backends.backend_agg `
+            --hidden-import matplotlib.backends.backend_svg `
+            --hidden-import matplotlib.backends.backend_pdf `
+            --hidden-import matplotlib.figure `
+            --hidden-import matplotlib.patches `
+            --hidden-import matplotlib.gridspec `
+            --collect-all streamlit `
+            --collect-all matplotlib `
+            --collect-all altair `
+            --collect-all pydeck `
+            --collect-all sklearn `
+            --collect-all scipy
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 储层主控因素分析系统-Windows
+          path: dist/储层主控因素分析系统.exe
+          retention-days: 30
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/储层主控因素分析系统.exe
+          generate_release_notes: true
